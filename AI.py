@@ -128,14 +128,7 @@ st.markdown("""
     .stApp {
         background-color: #f0f2f6;
     }
-    .main-header {
-        font-size: 2.5em;
-        font-weight: bold;
-        color: #2e86de !important; /* Made color !important for header */
-        text-align: center;
-        margin-bottom: 1em;
-        animation: fadeIn 2s;
-    }
+    /* Removed .main-header style from here to use inline style for H1 */
     .stButton>button {
         background-color: #2e86de;
         color: white;
@@ -167,13 +160,33 @@ st.markdown("""
         font-weight: bolder !important; /* Even bolder */
     }
 
+    /* CSS for uploaded file names */
+    /* This targets the span that typically holds the file name in the uploader */
+    div[data-testid="stFileUploader"] span.css-10trblm.e16nr0p30,
+    div[data-testid="stFileUploader"] div.uploadedFileName { /* Adjusted based on common Streamlit structure */
+        color: black !important;
+    }
+    /* Also target the x-button for removing files, if it's part of the same text */
+    div[data-testid="stFileUploader"] button[aria-label="Remove file"] {
+        color: black !important; /* Ensure 'X' is visible */
+    }
+
     @keyframes fadeIn {
       0% { opacity: 0; }
       100% { opacity: 1; }
     }
     </style>
-    <h1 class="main-header">📄 AI Invoice Assistant 🚀</h1>
-    """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True) # CSS block ends here
+
+# --- Main Header - Now using inline style for robustness ---
+st.markdown(
+    """
+    <h1 style="font-size: 2.5em; font-weight: bold; color: #2e86de !important; text-align: center; margin-bottom: 1em; animation: fadeIn 2s;">
+        📄 AI Invoice Assistant 🚀
+    </h1>
+    """, unsafe_allow_html=True
+)
+
 
 st.sidebar.header("⚙️ Configuration")
 
@@ -193,14 +206,19 @@ gemini_api_key = st.sidebar.text_input(
 effective_gemini_api_key = gemini_api_key if gemini_api_key else default_api_key_from_secrets
 
 # --- Configure Gemini API as early as possible ---
-if effective_gemini_api_key:
+# Moved this block outside of the process_button check
+if effective_gemini_api_key and not hasattr(genai, '_configured_api_key'): # Prevent repeated configuration
     try:
         genai.configure(api_key=effective_gemini_api_key)
+        setattr(genai, '_configured_api_key', True) # Mark as configured to avoid re-running this
         # st.sidebar.success("✅ Gemini API configured.") # No need to show this success, sidebar success is for admin
     except Exception as e:
         st.sidebar.error(f"❌ Failed to configure Gemini API: {e}")
         # Clear the key if it failed to configure to prevent re-attempts with bad key
         effective_gemini_api_key = ""
+        if hasattr(genai, '_configured_api_key'):
+            delattr(genai, '_configured_api_key')
+
 
 # Define the password for processing
 # Access it from secrets.toml. If not found, fall back to "Rajeev".
@@ -242,9 +260,6 @@ uploaded_files = st.file_uploader(
 # Initialize session state for results and client
 if 'summary_rows' not in st.session_state:
     st.session_state.summary_rows = []
-# No longer need 'client' in session state with the new SDK clientless setup for common ops
-# if 'client' not in st.session_state:
-#     st.session_state.client = None
 
 col1, col2 = st.columns([0.6, 0.4])
 
@@ -255,12 +270,11 @@ with col2:
 
 if clear_button:
     st.session_state.summary_rows = []
-    # st.session_state.client = None # Not needed
     uploaded_files = [] # This won't clear the file uploader directly on refresh, but clears logic
     st.experimental_rerun() # Rerun to clear uploader and display
 
 if process_button:
-    # --- Corrected API Key Check ---
+    # --- Corrected API Key Check (uses effective_gemini_api_key) ---
     if not effective_gemini_api_key: # Check the effective_gemini_api_key
         st.error("❗ Please enter your Gemini API Key in the sidebar.")
     elif user_entered_password != ACCESS_PASSWORD: # Compare against the defined ACCESS_PASSWORD
@@ -270,8 +284,6 @@ if process_button:
     elif not gemini_model_id_input:
         st.error("💡 Please specify a Gemini Model ID in the sidebar.")
     else:
-        # If we reach here, effective_gemini_api_key should already be configured
-        # The genai.configure() happens earlier for consistency.
         st.session_state.summary_rows = []
         status_text = st.empty()
         progress_bar = st.progress(0)

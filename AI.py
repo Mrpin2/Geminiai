@@ -131,7 +131,7 @@ st.markdown("""
     .main-header {
         font-size: 2.5em;
         font-weight: bold;
-        color: #2e86de; /* A nice blue */
+        color: #2e86de !important; /* Made color !important for header */
         text-align: center;
         margin-bottom: 1em;
         animation: fadeIn 2s;
@@ -177,12 +177,30 @@ st.markdown("""
 
 st.sidebar.header("⚙️ Configuration")
 
-# Using st.secrets for API key
+# --- API Key Handling ---
+# 1. Try to get API key from st.secrets first
+default_api_key_from_secrets = st.secrets.get("GEMINI_API_KEY", "")
+
+# 2. Allow user to input/override in sidebar. Pre-fill with secret if available.
 gemini_api_key = st.sidebar.text_input(
     "Enter your Gemini API Key:",
     type="password",
-    value=st.secrets.get("GEMINI_API_KEY", "") # Pre-fill from secrets if available
+    value=default_api_key_from_secrets
 )
+
+# If the user has entered a key in the input box, use that. Otherwise, stick with the one from secrets.
+# This prioritizes user input if they type something, otherwise relies on secrets.
+effective_gemini_api_key = gemini_api_key if gemini_api_key else default_api_key_from_secrets
+
+# --- Configure Gemini API as early as possible ---
+if effective_gemini_api_key:
+    try:
+        genai.configure(api_key=effective_gemini_api_key)
+        # st.sidebar.success("✅ Gemini API configured.") # No need to show this success, sidebar success is for admin
+    except Exception as e:
+        st.sidebar.error(f"❌ Failed to configure Gemini API: {e}")
+        # Clear the key if it failed to configure to prevent re-attempts with bad key
+        effective_gemini_api_key = ""
 
 # Define the password for processing
 # Access it from secrets.toml. If not found, fall back to "Rajeev".
@@ -242,7 +260,8 @@ if clear_button:
     st.experimental_rerun() # Rerun to clear uploader and display
 
 if process_button:
-    if not gemini_api_key:
+    # --- Corrected API Key Check ---
+    if not effective_gemini_api_key: # Check the effective_gemini_api_key
         st.error("❗ Please enter your Gemini API Key in the sidebar.")
     elif user_entered_password != ACCESS_PASSWORD: # Compare against the defined ACCESS_PASSWORD
         st.error("🔒 Incorrect password. Please enter the correct password to proceed.")
@@ -251,15 +270,8 @@ if process_button:
     elif not gemini_model_id_input:
         st.error("💡 Please specify a Gemini Model ID in the sidebar.")
     else:
-        try:
-            # Configure the API key globally for the new SDK
-            genai.configure(api_key=gemini_api_key)
-            st.success("✅ Gemini API configured successfully.")
-        except Exception as e:
-            st.error(f"❌ Failed to configure Gemini API: {e}")
-            # No need to stop here, just proceed with an error message
-            # If the API key is truly invalid, subsequent calls will fail anyway.
-
+        # If we reach here, effective_gemini_api_key should already be configured
+        # The genai.configure() happens earlier for consistency.
         st.session_state.summary_rows = []
         status_text = st.empty()
         progress_bar = st.progress(0)

@@ -152,16 +152,19 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background-color: #2e86de !important;
     }
-    /* Universal text color for better visibility */
-    body {
-        color: black; /* Set a default text color for the body */
+    /* Targeted CSS for the st.info box text */
+    .stAlert {
+        background-color: #e0f2f7; /* A slightly darker blue for better contrast as per previous iteration */
+        color: black !important; /* Ensures the info box's primary text color is black */
     }
-    /* Ensure the instruction box text is black */
-    .stAlert p, .stAlert li, .stAlert b {
-        color: black !important;
+    .stAlert div[data-testid="stMarkdownContainer"] p,
+    .stAlert div[data-testid="stMarkdownContainer"] li {
+        color: black !important; /* Force black for paragraphs and list items inside the markdown container within the alert */
+        font-weight: bold !important; /* Make text bold */
     }
-    .stAlert { /* Adjust info box background to be less transparent if needed */
-        background-color: #e0f2f7; /* A slightly darker blue for better contrast */
+    .stAlert div[data-testid="stMarkdownContainer"] b {
+        color: black !important; /* Ensure bold tags also remain black */
+        font-weight: bolder !important; /* Even bolder */
     }
 
     @keyframes fadeIn {
@@ -201,7 +204,7 @@ gemini_model_id_input = st.sidebar.text_input(
 )
 st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model supports schema-based JSON output.")
 
-# Changed instruction text to be explicitly black and using standard markdown within st.info
+# Instruction text using standard markdown within st.info
 st.info(
     "**Instructions:**\n"
     "1. Enter your **Gemini API Key** and **Password** in the sidebar.\n"

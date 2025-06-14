@@ -44,18 +44,30 @@ class Invoice(BaseModel):
 
 # --- Gemini API Interaction Function ---
 def extract_structured_data(
-    gemini_model_id: str, # No longer needs client_instance directly
+    gemini_model_id: str,
     file_path: str,
     pydantic_schema: BaseModel,
     progress_callback=None
 ):
+    """
+    Extracts structured data from a PDF invoice using the Gemini API.
+
+    Args:
+        gemini_model_id (str): The ID of the Gemini model to use (e.g., 'gemini-1.5-flash-latest').
+        file_path (str): The local path to the PDF invoice file.
+        pydantic_schema (BaseModel): The Pydantic schema to enforce for the extracted data.
+        progress_callback (callable, optional): A function to update progress (percentage, message).
+
+    Returns:
+        Invoice: An Invoice Pydantic model instance with the extracted data, or None if an error occurs.
+    """
     display_name = os.path.basename(file_path)
     gemini_file_resource = None
 
     try:
         if progress_callback:
             progress_callback(0.1, f"Uploading '{display_name}' to Gemini File API...")
-        
+            
         # Use genai.upload_file directly
         gemini_file_resource = genai.upload_file(
             path=file_path,
@@ -82,7 +94,7 @@ def extract_structured_data(
 
         if progress_callback:
             progress_callback(0.6, f"Sending '{display_name}' to Gemini model '{gemini_model_id}' for extraction...")
-        
+            
         # Load the model directly
         model = genai.GenerativeModel(gemini_model_id)
 
@@ -94,16 +106,16 @@ def extract_structured_data(
         if progress_callback:
             progress_callback(0.9, f"Data extracted for '{display_name}'.")
 
-        # Use .text and then parse if .parsed is not directly available or causes issues
-        import json
+        # Use .text to get the raw JSON string and then parse it using Pydantic's model_validate_json
         return pydantic_schema.model_validate_json(response.text)
 
     except Exception as e:
         st.error(f"Error processing '{display_name}' with Gemini: {e}")
         import traceback
-        st.exception(e) # Display full traceback
+        st.exception(e) # Display full traceback for debugging
         return None
     finally:
+        # Clean up the uploaded file from Gemini File API
         if gemini_file_resource:
             try:
                 if progress_callback:
@@ -116,7 +128,7 @@ def extract_structured_data(
 # --- Streamlit App UI ---
 st.set_page_config(layout="wide", page_title="AI-Powered Invoice Extractor", page_icon="🤖")
 
-# Custom header with emoji and brand
+# Custom header with emoji and brand and general CSS
 st.markdown("""
     <style>
     .reportview-container .main .block-container{
@@ -128,7 +140,6 @@ st.markdown("""
     .stApp {
         background-color: #f0f2f6;
     }
-    /* Removed .main-header style from here to use inline style for H1 */
     .stButton>button {
         background-color: #2e86de;
         color: white;
@@ -145,30 +156,25 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background-color: #2e86de !important;
     }
-    /* Targeted CSS for the st.info box text */
+    /* Reverted st.info styling for better readability */
     .stAlert {
-        background-color: #e0f2f7; /* A slightly darker blue for better contrast as per previous iteration */
-        color: black !important; /* Ensures the info box's primary text color is black */
+        background-color: #e0f2f7; /* A light blue */
+        color: #333333; /* Darker text for contrast */
     }
     .stAlert div[data-testid="stMarkdownContainer"] p,
-    .stAlert div[data-testid="stMarkdownContainer"] li {
-        color: black !important; /* Force black for paragraphs and list items inside the markdown container within the alert */
-        font-weight: bold !important; /* Make text bold */
-    }
+    .stAlert div[data-testid="stMarkdownContainer"] li,
     .stAlert div[data-testid="stMarkdownContainer"] b {
-        color: black !important; /* Ensure bold tags also remain black */
-        font-weight: bolder !important; /* Even bolder */
+        color: #333333 !important; /* Ensure text inside info box is readable */
+        font-weight: normal; /* Remove bold from info text to be less aggressive */
     }
 
     /* CSS for uploaded file names */
-    /* This targets the span that typically holds the file name in the uploader */
     div[data-testid="stFileUploader"] span.css-10trblm.e16nr0p30,
-    div[data-testid="stFileUploader"] div.uploadedFileName { /* Adjusted based on common Streamlit structure */
+    div[data-testid="stFileUploader"] div.uploadedFileName {
         color: black !important;
     }
-    /* Also target the x-button for removing files, if it's part of the same text */
     div[data-testid="stFileUploader"] button[aria-label="Remove file"] {
-        color: black !important; /* Ensure 'X' is visible */
+        color: black !important;
     }
 
     @keyframes fadeIn {
@@ -187,11 +193,10 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-
 st.sidebar.header("⚙️ Configuration")
 
 # --- API Key Handling ---
-# 1. Try to get API key from st.secrets first
+# 1. Try to get API key from st.secrets first (for deployment)
 default_api_key_from_secrets = st.secrets.get("GEMINI_API_KEY", "")
 
 # 2. Allow user to input/override in sidebar. Pre-fill with secret if available.
@@ -206,18 +211,15 @@ gemini_api_key = st.sidebar.text_input(
 effective_gemini_api_key = gemini_api_key if gemini_api_key else default_api_key_from_secrets
 
 # --- Configure Gemini API as early as possible ---
-# Moved this block outside of the process_button check
-if effective_gemini_api_key and not hasattr(genai, '_configured_api_key'): # Prevent repeated configuration
+# Always attempt to configure if an effective API key is present.
+# This handles initial setup and cases where the user updates the key.
+if effective_gemini_api_key:
     try:
         genai.configure(api_key=effective_gemini_api_key)
-        setattr(genai, '_configured_api_key', True) # Mark as configured to avoid re-running this
         # st.sidebar.success("✅ Gemini API configured.") # No need to show this success, sidebar success is for admin
     except Exception as e:
-        st.sidebar.error(f"❌ Failed to configure Gemini API: {e}")
-        # Clear the key if it failed to configure to prevent re-attempts with bad key
-        effective_gemini_api_key = ""
-        if hasattr(genai, '_configured_api_key'):
-            delattr(genai, '_configured_api_key')
+        st.sidebar.error(f"❌ Failed to configure Gemini API: {e}. Please check your key.")
+        effective_gemini_api_key = "" # Clear key if configuration fails to prevent re-attempts with bad key
 
 
 # Define the password for processing
@@ -230,8 +232,7 @@ user_entered_password = st.sidebar.text_input("Enter Password for Admin Panel:",
 # Display admin panel activated message
 if user_entered_password == ACCESS_PASSWORD and user_entered_password != "":
     st.sidebar.success("🎉 Admin Panel Activated!")
-    # Optionally, you could set a session state variable here
-    # st.session_state.admin_activated = True
+
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
 gemini_model_id_input = st.sidebar.text_input(
@@ -270,8 +271,8 @@ with col2:
 
 if clear_button:
     st.session_state.summary_rows = []
-    uploaded_files = [] # This won't clear the file uploader directly on refresh, but clears logic
-    st.experimental_rerun() # Rerun to clear uploader and display
+    # Force a rerun to clear the file uploader visually and state
+    st.experimental_rerun()
 
 if process_button:
     # --- Corrected API Key Check (uses effective_gemini_api_key) ---
@@ -284,25 +285,33 @@ if process_button:
     elif not gemini_model_id_input:
         st.error("💡 Please specify a Gemini Model ID in the sidebar.")
     else:
-        st.session_state.summary_rows = []
-        status_text = st.empty()
-        progress_bar = st.progress(0)
+        st.session_state.summary_rows = [] # Clear previous results
+        status_text = st.empty() # Placeholder for status messages
+        progress_bar = st.progress(0) # Placeholder for overall progress
         total_files = len(uploaded_files)
 
         for i, uploaded_file_obj in enumerate(uploaded_files):
-            st.markdown("---")
+            st.markdown("---") # Separator for each file's processing
+            
+            # Use status_text for overall file processing updates
             status_text.info(f"⏳ Processing file: **{uploaded_file_obj.name}** ({i+1}/{total_files})")
+            
             temp_file_path = None
             
             def update_progress(percentage, message):
+                """Callback function to update the progress bar and status message."""
                 progress_bar.progress(int(percentage * 100))
-                status_text.text(f"Processing {uploaded_file_obj.name}: {message}")
+                # Append file-specific message to the status text
+                status_text.info(f"⏳ Processing file: **{uploaded_file_obj.name}** ({i+1}/{total_files})\n\n{message}")
+
 
             try:
+                # Save the uploaded file to a temporary location
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                     tmp.write(uploaded_file_obj.getvalue())
                     temp_file_path = tmp.name
 
+                # Extract data using the Gemini API
                 extracted_data = extract_structured_data(
                     gemini_model_id=gemini_model_id_input,
                     file_path=temp_file_path,
@@ -313,18 +322,19 @@ if process_button:
                 if extracted_data:
                     st.success(f"🎉 Successfully extracted data from **{uploaded_file_obj.name}**")
                     
-                    # Handle potential None values for display
+                    # Handle potential None values for display gracefully
                     cgst = extracted_data.cgst_amount if extracted_data.cgst_amount is not None else 0.0
                     sgst = extracted_data.sgst_amount if extracted_data.sgst_amount is not None else 0.0
                     igst = extracted_data.igst_amount if extracted_data.igst_amount is not None else 0.0
-                    total_tax = extracted_data.total_tax_amount if extracted_data.total_tax_amount is not None else (cgst + sgst + igst) # Fallback calculation
+                    # Fallback calculation if total_tax_amount is None
+                    total_tax = extracted_data.total_tax_amount if extracted_data.total_tax_amount is not None else (cgst + sgst + igst) 
                     pos = extracted_data.place_of_supply if extracted_data.place_of_supply else "N/A"
                     buyer_gstin_display = extracted_data.buyer_gstin or "N/A"
                     expense_ledger = extracted_data.expense_ledger_suggestion or "Uncategorized"
                     tds_status = extracted_data.tds_applicability or "Not Specified"
                     rcm_status = extracted_data.rcm_applicability or "Not Specified"
 
-                    # Create a more detailed narration including line items if possible
+                    # Create a more detailed narration including line items
                     line_item_summary = "; ".join([
                         f"{item.description} (Qty: {item.quantity}, Worth: {item.gross_worth:.2f})"
                         for item in extracted_data.line_items
@@ -370,42 +380,45 @@ if process_button:
 
             except Exception as e_outer:
                 st.error(f"❌ An unexpected error occurred while processing **{uploaded_file_obj.name}**: {e_outer}")
-                st.exception(e_outer)
+                st.exception(e_outer) # Display full traceback for any unhandled exceptions
             finally:
+                # Ensure the temporary file is deleted
                 if temp_file_path and os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
-                    # No need for a separate message, progress bar takes care of it
+            
+            # Update overall progress bar after each file
             progress_bar.progress((i + 1) / total_files)
             time.sleep(0.1) # Small delay for animation effect
 
         st.markdown("---")
         if st.session_state.summary_rows:
-            st.balloons()
+            st.balloons() # Celebrate successful extraction
             status_text.success("✅ All invoices processed successfully!")
         else:
             status_text.warning("No data extracted from any of the uploaded invoices.")
 
+# Display extracted summary table if available
 if st.session_state.summary_rows:
     st.subheader("📊 Extracted Invoice Summary")
     df = pd.DataFrame(st.session_state.summary_rows)
     
-    # Format financial columns for better display
+    # Format financial columns for better display in the Streamlit dataframe
     financial_cols = ["Total Gross Worth (₹)", "CGST (₹)", "SGST (₹)", "IGST (₹)", "Total Tax (₹)", "Total Payable (₹)"]
     for col in financial_cols:
         if col in df.columns:
-            df[col] = df[col].apply(lambda x: f"₹{float(x):,.2f}" if pd.notnull(x) else "N/A")
+            df[col] = df[col].apply(lambda x: f"₹{float(x):,.2f}" if pd.notnull(x) and x != '' else "N/A")
 
     st.dataframe(df, use_container_width=True)
 
     # Provide download link for Excel
     output_excel = io.BytesIO()
     with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
-        # Convert financial columns back to numeric for Excel if needed, or keep as formatted strings
-        # For Excel, it's often better to save as raw numbers for calculations
+        # For Excel download, convert financial columns back to numeric for proper Excel calculations
         df_for_excel = pd.DataFrame(st.session_state.summary_rows)
         for col in financial_cols:
             if col in df_for_excel.columns:
-                df_for_excel[col] = pd.to_numeric(df_for_excel[col], errors='coerce') # Convert back to numbers
+                # Remove '₹' and convert to numeric, coerce errors to NaN
+                df_for_excel[col] = pd.to_numeric(df_for_excel[col].astype(str).str.replace('₹', '').str.replace(',', ''), errors='coerce') 
 
         df_for_excel.to_excel(writer, index=False, sheet_name='InvoiceSummary')
     excel_data = output_excel.getvalue()
@@ -417,7 +430,7 @@ if st.session_state.summary_rows:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         help="Download the extracted invoice data as an Excel spreadsheet."
     )
-elif not uploaded_files and not process_button: # Only show this if nothing has been uploaded or processed yet
+elif not uploaded_files and not process_button: # Only show this guidance if nothing has been uploaded or processed yet
     st.info("Upload PDF files and click '🚀 Process Invoices' to see results.")
 
 st.markdown("---")

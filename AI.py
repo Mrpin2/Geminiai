@@ -170,7 +170,11 @@ gemini_api_key = st.sidebar.text_input(
 st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
 
 # Rajeev's password for processing (example)
-rajeev_password = st.sidebar.text_input("Enter Password to Process:", type="Rajeev")
+# FIX 1: Change type="Rajeev" to type="password"
+# FIX 2: Store the actual password securely, ideally in secrets.toml
+RAJEEV_PASSWORD = st.secrets.get("RAJEEV_PASSWORD", "your_actual_secure_password_here") # IMPORTANT: Replace with a strong password!
+rajeev_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
+
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
 gemini_model_id_input = st.sidebar.text_input(
@@ -181,7 +185,7 @@ st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model su
 
 st.info(
     "**Instructions:**\n"
-    "1. Enter your **Gemini API Key** and **Rajeev's Password** in the sidebar.\n"
+    "1. Enter your **Gemini API Key** and **Password** in the sidebar.\n"
     "2. Upload one or more **PDF invoice files**.\n"
     "3. Click **'🚀 Process Invoices'** to extract data.\n"
     "The extracted data will be displayed in a table and available for download as Excel."
@@ -216,8 +220,9 @@ if clear_button:
 if process_button:
     if not gemini_api_key:
         st.error("❗ Please enter your Gemini API Key in the sidebar.")
-    elif rajeev_password != "your_secret_password": # Replace "your_secret_password" with Rajeev's actual password
-        st.error("🔒 Incorrect password. Please enter Rajeev's password to proceed.")
+    # FIX 3: Compare against the defined RAJEEV_PASSWORD
+    elif rajeev_entered_password != RAJEEV_PASSWORD:
+        st.error("🔒 Incorrect password. Please enter the correct password to proceed.")
     elif not uploaded_files:
         st.error("⬆️ Please upload at least one PDF file to process.")
     elif not gemini_model_id_input:

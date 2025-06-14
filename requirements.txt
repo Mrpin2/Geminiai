@@ -8,3 +8,13 @@ google-generativeai
 google
 google-genai
 streamlit-lottie 
+streamlit
+Pillow
+PyMuPDF
+pandas
+requests
+streamlit-lottie
+openai
+google-generativeai
+python-dateutil
+xlsxwriter

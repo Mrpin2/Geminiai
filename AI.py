@@ -152,10 +152,14 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background-color: #2e86de !important;
     }
-    /* Style for the info box text - potentially causes visibility issues */
+    /* Style for the info box text - now forced to black */
     .stMarkdown p {
-        color: white !important; /* Force white text for paragraphs in markdown */
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.5); /* Add a subtle shadow for better readability */
+        color: black !important; /* Force black text for paragraphs in markdown */
+        text-shadow: none; /* Remove shadow if it was causing issues, or adjust */
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
     }
     </style>
     <h1 class="main-header">📄 AI Invoice Assistant 🚀</h1>
@@ -177,6 +181,11 @@ ACCESS_PASSWORD = st.secrets.get("ACCESS_PASSWORD", "Rajeev")
 # Changed label here
 user_entered_password = st.sidebar.text_input("Enter Password for Admin Panel:", type="password")
 
+# Display admin panel activated message
+if user_entered_password == ACCESS_PASSWORD and user_entered_password != "":
+    st.sidebar.success("🎉 Admin Panel Activated!")
+    # Optionally, you could set a session state variable here
+    # st.session_state.admin_activated = True
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
 gemini_model_id_input = st.sidebar.text_input(
@@ -185,10 +194,10 @@ gemini_model_id_input = st.sidebar.text_input(
 )
 st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model supports schema-based JSON output.")
 
-# Changed instruction text to be explicitly white with shadow
+# Changed instruction text to be explicitly black without shadow (or minimal shadow)
 st.info(
     """
-    <p style="color:white; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">
+    <p style="color:black;">
     <b>Instructions:</b><br>
     1. Enter your <b>Gemini API Key</b> and <b>Password</b> in the sidebar.<br>
     2. Upload one or more <b>PDF invoice files</b>.<br>

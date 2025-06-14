@@ -170,7 +170,7 @@ gemini_api_key = st.sidebar.text_input(
 st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
 
 # Rajeev's password for processing (example)
-rajeev_password = st.sidebar.text_input("Enter Rajeev's Password to Process:", type="password")
+rajeev_password = st.sidebar.text_input("Enter Password to Process:", type="Rajeev")
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
 gemini_model_id_input = st.sidebar.text_input(

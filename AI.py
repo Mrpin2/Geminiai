@@ -9,9 +9,10 @@ import time # For animations/sleep
 
 # Try to import google.generativeai, show error if not found
 try:
+    # Use the new 'google-genai' library for the latest SDK
     from google import generativeai as genai
 except ImportError:
-    st.error("The 'google-generativeai' library is not installed. Please install it by running: `pip install google-generativeai`")
+    st.error("The 'google-genai' library is not installed. Please install it by running: `pip install google-genai`")
     st.stop()
 
 # --- Pydantic Models (Enhanced) ---
@@ -43,8 +44,7 @@ class Invoice(BaseModel):
 
 # --- Gemini API Interaction Function ---
 def extract_structured_data(
-    client_instance,
-    gemini_model_id: str,
+    gemini_model_id: str, # No longer needs client_instance directly
     file_path: str,
     pydantic_schema: BaseModel,
     progress_callback=None
@@ -56,8 +56,9 @@ def extract_structured_data(
         if progress_callback:
             progress_callback(0.1, f"Uploading '{display_name}' to Gemini File API...")
         
-        gemini_file_resource = client_instance.files.upload(
-            file=file_path,
+        # Use genai.upload_file directly
+        gemini_file_resource = genai.upload_file(
+            path=file_path,
             display_name=display_name.split('.')[0]
         )
         if progress_callback:
@@ -82,8 +83,10 @@ def extract_structured_data(
         if progress_callback:
             progress_callback(0.6, f"Sending '{display_name}' to Gemini model '{gemini_model_id}' for extraction...")
         
-        response = client_instance.models.generate_content(
-            model=gemini_model_id,
+        # Load the model directly
+        model = genai.GenerativeModel(gemini_model_id)
+
+        response = model.generate_content(
             contents=[prompt, gemini_file_resource],
             generation_config={'response_mime_type': 'application/json', 'response_schema': pydantic_schema.model_json_schema()}
         )
@@ -92,7 +95,6 @@ def extract_structured_data(
             progress_callback(0.9, f"Data extracted for '{display_name}'.")
 
         # Use .text and then parse if .parsed is not directly available or causes issues
-        # The .text attribute typically holds the JSON string, which then needs parsing.
         import json
         return pydantic_schema.model_validate_json(response.text)
 
@@ -106,8 +108,7 @@ def extract_structured_data(
             try:
                 if progress_callback:
                     progress_callback(1.0, f"Cleaning up '{gemini_file_resource.name}' from Gemini File API...")
-                client_instance.files.delete(name=gemini_file_resource.name)
-                # Removed success message as it can clutter for multiple files
+                genai.delete_file(name=gemini_file_resource.name) # Use genai.delete_file
             except Exception as e_del:
                 st.warning(f"Could not delete '{gemini_file_resource.name}' from Gemini File API: {e_del}. Manual cleanup may be required.")
 
@@ -151,9 +152,10 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background-color: #2e86de !important;
     }
-    @keyframes fadeIn {
-      0% { opacity: 0; }
-      100% { opacity: 1; }
+    /* Style for the info box text - potentially causes visibility issues */
+    .stMarkdown p {
+        color: white !important; /* Force white text for paragraphs in markdown */
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5); /* Add a subtle shadow for better readability */
     }
     </style>
     <h1 class="main-header">📄 AI Invoice Assistant 🚀</h1>
@@ -167,15 +169,13 @@ gemini_api_key = st.sidebar.text_input(
     type="password",
     value=st.secrets.get("GEMINI_API_KEY", "") # Pre-fill from secrets if available
 )
-# Removed: st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
 
 # Define the password for processing
-# For security, strongly recommend storing this in a .streamlit/secrets.toml file.
-# Example: ACCESS_PASSWORD="your_secure_password_here"
-# If you are testing locally and want "Rajeev" to work without secrets.toml, you can set it directly here:
-ACCESS_PASSWORD = st.secrets.get("ACCESS_PASSWORD", "Rajeev") # Defaulting to "Rajeev" if not in secrets
+# Access it from secrets.toml. If not found, fall back to "Rajeev".
+ACCESS_PASSWORD = st.secrets.get("ACCESS_PASSWORD", "Rajeev") 
 
-user_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
+# Changed label here
+user_entered_password = st.sidebar.text_input("Enter Password for Admin Panel:", type="password")
 
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
@@ -185,13 +185,19 @@ gemini_model_id_input = st.sidebar.text_input(
 )
 st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model supports schema-based JSON output.")
 
+# Changed instruction text to be explicitly white with shadow
 st.info(
-    "**Instructions:**\n"
-    "1. Enter your **Gemini API Key** and **Password** in the sidebar.\n"
-    "2. Upload one or more **PDF invoice files**.\n"
-    "3. Click **'🚀 Process Invoices'** to extract data.\n"
-    "The extracted data will be displayed in a table and available for download as Excel."
+    """
+    <p style="color:white; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">
+    <b>Instructions:</b><br>
+    1. Enter your <b>Gemini API Key</b> and <b>Password</b> in the sidebar.<br>
+    2. Upload one or more <b>PDF invoice files</b>.<br>
+    3. Click <b>'🚀 Process Invoices'</b> to extract data.<br>
+    The extracted data will be displayed in a table and available for download as Excel.
+    </p>
+    """, unsafe_allow_html=True
 )
+
 
 uploaded_files = st.file_uploader(
     "📂 Choose PDF Invoice Files",
@@ -203,8 +209,9 @@ uploaded_files = st.file_uploader(
 # Initialize session state for results and client
 if 'summary_rows' not in st.session_state:
     st.session_state.summary_rows = []
-if 'client' not in st.session_state:
-    st.session_state.client = None
+# No longer need 'client' in session state with the new SDK clientless setup for common ops
+# if 'client' not in st.session_state:
+#     st.session_state.client = None
 
 col1, col2 = st.columns([0.6, 0.4])
 
@@ -215,7 +222,7 @@ with col2:
 
 if clear_button:
     st.session_state.summary_rows = []
-    st.session_state.client = None
+    # st.session_state.client = None # Not needed
     uploaded_files = [] # This won't clear the file uploader directly on refresh, but clears logic
     st.experimental_rerun() # Rerun to clear uploader and display
 
@@ -230,114 +237,114 @@ if process_button:
         st.error("💡 Please specify a Gemini Model ID in the sidebar.")
     else:
         try:
-            st.session_state.client = genai.Client(api_key=gemini_api_key)
-            st.success("✅ Gemini client initialized successfully.")
+            # Configure the API key globally for the new SDK
+            genai.configure(api_key=gemini_api_key)
+            st.success("✅ Gemini API configured successfully.")
         except Exception as e:
-            st.error(f"❌ Failed to initialize Gemini client: {e}")
-            st.session_state.client = None
+            st.error(f"❌ Failed to configure Gemini API: {e}")
+            # No need to stop here, just proceed with an error message
+            # If the API key is truly invalid, subsequent calls will fail anyway.
 
-        if st.session_state.client:
-            st.session_state.summary_rows = []
-            status_text = st.empty()
-            progress_bar = st.progress(0)
-            total_files = len(uploaded_files)
+        st.session_state.summary_rows = []
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+        total_files = len(uploaded_files)
 
-            for i, uploaded_file_obj in enumerate(uploaded_files):
-                st.markdown("---")
-                status_text.info(f"⏳ Processing file: **{uploaded_file_obj.name}** ({i+1}/{total_files})")
-                temp_file_path = None
-                
-                def update_progress(percentage, message):
-                    progress_bar.progress(int(percentage * 100))
-                    status_text.text(f"Processing {uploaded_file_obj.name}: {message}")
-
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                        tmp.write(uploaded_file_obj.getvalue())
-                        temp_file_path = tmp.name
-
-                    extracted_data = extract_structured_data(
-                        client_instance=st.session_state.client,
-                        gemini_model_id=gemini_model_id_input,
-                        file_path=temp_file_path,
-                        pydantic_schema=Invoice,
-                        progress_callback=update_progress
-                    )
-
-                    if extracted_data:
-                        st.success(f"🎉 Successfully extracted data from **{uploaded_file_obj.name}**")
-                        
-                        # Handle potential None values for display
-                        cgst = extracted_data.cgst_amount if extracted_data.cgst_amount is not None else 0.0
-                        sgst = extracted_data.sgst_amount if extracted_data.sgst_amount is not None else 0.0
-                        igst = extracted_data.igst_amount if extracted_data.igst_amount is not None else 0.0
-                        total_tax = extracted_data.total_tax_amount if extracted_data.total_tax_amount is not None else (cgst + sgst + igst) # Fallback calculation
-                        pos = extracted_data.place_of_supply if extracted_data.place_of_supply else "N/A"
-                        buyer_gstin_display = extracted_data.buyer_gstin or "N/A"
-                        expense_ledger = extracted_data.expense_ledger_suggestion or "Uncategorized"
-                        tds_status = extracted_data.tds_applicability or "Not Specified"
-                        rcm_status = extracted_data.rcm_applicability or "Not Specified"
-
-                        # Create a more detailed narration including line items if possible
-                        line_item_summary = "; ".join([
-                            f"{item.description} (Qty: {item.quantity}, Worth: {item.gross_worth:.2f})"
-                            for item in extracted_data.line_items
-                        ])
-                        if not line_item_summary:
-                            line_item_summary = "No detailed line items extracted."
-
-                        narration = (
-                            f"Invoice **{extracted_data.invoice_number}** dated **{extracted_data.date}** "
-                            f"from **{extracted_data.seller_name}** (GSTIN: {extracted_data.seller_gstin}) "
-                            f"to **{extracted_data.buyer_name}** (GSTIN: {buyer_gstin_display}). "
-                            f"Total Gross Worth: **₹{extracted_data.total_gross_worth:.2f}**. "
-                            f"Taxes: CGST ₹{cgst:.2f}, SGST ₹{sgst:.2f}, IGST ₹{igst:.2f}. Total Tax: ₹{total_tax:.2f}. "
-                            f"**Total Payable: ₹{extracted_data.total_payable_amount:.2f}**. "
-                            f"Place of Supply: {pos}. Suggested Expense Ledger: **{expense_ledger}**. "
-                            f"TDS: {tds_status}. RCM: {rcm_status}. "
-                            f"Details: {line_item_summary}"
-                        )
-                        
-                        st.session_state.summary_rows.append({
-                            "File Name": uploaded_file_obj.name,
-                            "Invoice Number": extracted_data.invoice_number,
-                            "Date": extracted_data.date,
-                            "Seller Name": extracted_data.seller_name,
-                            "Seller GSTIN": extracted_data.seller_gstin,
-                            "Buyer Name": extracted_data.buyer_name,
-                            "Buyer GSTIN": buyer_gstin_display,
-                            "Total Gross Worth (₹)": f"{extracted_data.total_gross_worth:.2f}",
-                            "CGST (₹)": f"{cgst:.2f}",
-                            "SGST (₹)": f"{sgst:.2f}",
-                            "IGST (₹)": f"{igst:.2f}",
-                            "Total Tax (₹)": f"{total_tax:.2f}",
-                            "Total Payable (₹)": f"{extracted_data.total_payable_amount:.2f}",
-                            "Place of Supply": pos,
-                            "Expense Ledger": expense_ledger,
-                            "TDS Applicability": tds_status,
-                            "RCM Applicability": rcm_status,
-                            "Narration": narration,
-                            "Line Items": ", ".join([f"{item.description} (Qty: {item.quantity}, Gross: {item.gross_worth})" for item in extracted_data.line_items])
-                        })
-                    else:
-                        st.warning(f"⚠️ Failed to extract data or no data returned for **{uploaded_file_obj.name}**.")
-
-                except Exception as e_outer:
-                    st.error(f"❌ An unexpected error occurred while processing **{uploaded_file_obj.name}**: {e_outer}")
-                    st.exception(e_outer)
-                finally:
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                        # No need for a separate message, progress bar takes care of it
-                progress_bar.progress((i + 1) / total_files)
-                time.sleep(0.1) # Small delay for animation effect
-
+        for i, uploaded_file_obj in enumerate(uploaded_files):
             st.markdown("---")
-            if st.session_state.summary_rows:
-                st.balloons()
-                status_text.success("✅ All invoices processed successfully!")
-            else:
-                status_text.warning("No data extracted from any of the uploaded invoices.")
+            status_text.info(f"⏳ Processing file: **{uploaded_file_obj.name}** ({i+1}/{total_files})")
+            temp_file_path = None
+            
+            def update_progress(percentage, message):
+                progress_bar.progress(int(percentage * 100))
+                status_text.text(f"Processing {uploaded_file_obj.name}: {message}")
+
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(uploaded_file_obj.getvalue())
+                    temp_file_path = tmp.name
+
+                extracted_data = extract_structured_data(
+                    gemini_model_id=gemini_model_id_input,
+                    file_path=temp_file_path,
+                    pydantic_schema=Invoice,
+                    progress_callback=update_progress
+                )
+
+                if extracted_data:
+                    st.success(f"🎉 Successfully extracted data from **{uploaded_file_obj.name}**")
+                    
+                    # Handle potential None values for display
+                    cgst = extracted_data.cgst_amount if extracted_data.cgst_amount is not None else 0.0
+                    sgst = extracted_data.sgst_amount if extracted_data.sgst_amount is not None else 0.0
+                    igst = extracted_data.igst_amount if extracted_data.igst_amount is not None else 0.0
+                    total_tax = extracted_data.total_tax_amount if extracted_data.total_tax_amount is not None else (cgst + sgst + igst) # Fallback calculation
+                    pos = extracted_data.place_of_supply if extracted_data.place_of_supply else "N/A"
+                    buyer_gstin_display = extracted_data.buyer_gstin or "N/A"
+                    expense_ledger = extracted_data.expense_ledger_suggestion or "Uncategorized"
+                    tds_status = extracted_data.tds_applicability or "Not Specified"
+                    rcm_status = extracted_data.rcm_applicability or "Not Specified"
+
+                    # Create a more detailed narration including line items if possible
+                    line_item_summary = "; ".join([
+                        f"{item.description} (Qty: {item.quantity}, Worth: {item.gross_worth:.2f})"
+                        for item in extracted_data.line_items
+                    ])
+                    if not line_item_summary:
+                        line_item_summary = "No detailed line items extracted."
+
+                    narration = (
+                        f"Invoice **{extracted_data.invoice_number}** dated **{extracted_data.date}** "
+                        f"from **{extracted_data.seller_name}** (GSTIN: {extracted_data.seller_gstin}) "
+                        f"to **{extracted_data.buyer_name}** (GSTIN: {buyer_gstin_display}). "
+                        f"Total Gross Worth: **₹{extracted_data.total_gross_worth:.2f}**. "
+                        f"Taxes: CGST ₹{cgst:.2f}, SGST ₹{sgst:.2f}, IGST ₹{igst:.2f}. Total Tax: ₹{total_tax:.2f}. "
+                        f"**Total Payable: ₹{extracted_data.total_payable_amount:.2f}**. "
+                        f"Place of Supply: {pos}. Suggested Expense Ledger: **{expense_ledger}**. "
+                        f"TDS: {tds_status}. RCM: {rcm_status}. "
+                        f"Details: {line_item_summary}"
+                    )
+                    
+                    st.session_state.summary_rows.append({
+                        "File Name": uploaded_file_obj.name,
+                        "Invoice Number": extracted_data.invoice_number,
+                        "Date": extracted_data.date,
+                        "Seller Name": extracted_data.seller_name,
+                        "Seller GSTIN": extracted_data.seller_gstin,
+                        "Buyer Name": extracted_data.buyer_name,
+                        "Buyer GSTIN": buyer_gstin_display,
+                        "Total Gross Worth (₹)": f"{extracted_data.total_gross_worth:.2f}",
+                        "CGST (₹)": f"{cgst:.2f}",
+                        "SGST (₹)": f"{sgst:.2f}",
+                        "IGST (₹)": f"{igst:.2f}",
+                        "Total Tax (₹)": f"{total_tax:.2f}",
+                        "Total Payable (₹)": f"{extracted_data.total_payable_amount:.2f}",
+                        "Place of Supply": pos,
+                        "Expense Ledger": expense_ledger,
+                        "TDS Applicability": tds_status,
+                        "RCM Applicability": rcm_status,
+                        "Narration": narration,
+                        "Line Items": ", ".join([f"{item.description} (Qty: {item.quantity}, Gross: {item.gross_worth})" for item in extracted_data.line_items])
+                    })
+                else:
+                    st.warning(f"⚠️ Failed to extract data or no data returned for **{uploaded_file_obj.name}**.")
+
+            except Exception as e_outer:
+                st.error(f"❌ An unexpected error occurred while processing **{uploaded_file_obj.name}**: {e_outer}")
+                st.exception(e_outer)
+            finally:
+                if temp_file_path and os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    # No need for a separate message, progress bar takes care of it
+            progress_bar.progress((i + 1) / total_files)
+            time.sleep(0.1) # Small delay for animation effect
+
+        st.markdown("---")
+        if st.session_state.summary_rows:
+            st.balloons()
+            status_text.success("✅ All invoices processed successfully!")
+        else:
+            status_text.warning("No data extracted from any of the uploaded invoices.")
 
 if st.session_state.summary_rows:
     st.subheader("📊 Extracted Invoice Summary")

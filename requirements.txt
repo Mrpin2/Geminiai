@@ -1,5 +1,5 @@
 streamlit
-pydantic==2.* # Or a specific version you're using, e.g., pydantic==2.5.3
+pydantic
 pandas
+openpyxl
 google-generativeai
-openpyxl # Needed for pd.ExcelWriter to work

@@ -7,13 +7,14 @@ import tempfile # For temporary file handling
 import io # For Excel download
 import requests # For loading Lottie animations
 from streamlit_lottie import st_lottie # For displaying Lottie animations
+import traceback # For detailed error reporting
 
 # Try to import google.generativeai, show error if not found
 try:
     from google import genai
 except ImportError:
     st.error("The 'google-generativeai' library is not installed. Please install it by running: pip install google-generativeai")
-    st.stop()
+    st.stop() # Keep this stop as it's a fundamental library import check
 
 st.set_page_config(layout="wide")
 
@@ -46,11 +47,12 @@ if "file_uploader_key" not in st.session_state: # Key for resetting file uploade
     st.session_state["file_uploader_key"] = 0
 if 'summary_rows' not in st.session_state:
     st.session_state.summary_rows = []
-if 'client' not in st.session_state:
+if 'client' not in st.session_state: # Client will be initialized on process button click
     st.session_state.client = None
 
 # Display initial Lottie animation if no files have been uploaded yet
-if not st.session_state["files_uploaded"] and not st.session_state["process_triggered"]:
+# and no processing has been triggered (i.e., fresh start or after clear)
+if not st.session_state["files_uploaded"] and not st.session_state["process_triggered"] and not st.session_state.summary_rows:
     if hello_json:
         st_lottie(hello_json, height=200, key="hello")
 
@@ -58,34 +60,26 @@ st.markdown("<h2 style='text-align: center;'>📄 PDF Invoice Extractor (Gemini 
 st.markdown("Upload scanned PDF invoices and extract structured finance data using Google Gemini AI.")
 st.markdown("---")
 
-# --- Admin Passcode and Gemini API Key Configuration ---
+# --- Admin Passcode and Gemini API Key Configuration (inputs moved here) ---
 st.sidebar.header("🔐 AI Config")
 passcode = st.sidebar.text_input("Admin Passcode", type="password")
 admin_unlocked = passcode == "Rajeev" # Define your admin password here
 
-gemini_api_key = None
+# Determine the API key source but don't stop the app yet if it's missing
 if admin_unlocked:
     st.sidebar.success("🔓 Admin access granted. Using API key from Streamlit secrets.")
-    # Retrieve API key from Streamlit secrets (for deployed apps)
-    gemini_api_key = st.secrets.get("GEMINI_API_KEY") # Ensure GEMINI_API_KEY is set in your Streamlit secrets
-    if not gemini_api_key:
-        st.sidebar.error("`GEMINI_API_KEY` missing in Streamlit secrets. Please configure it.")
-        st.stop()
+    gemini_api_key_candidate = st.secrets.get("GEMINI_API_KEY") # Candidate API key
+    if not gemini_api_key_candidate:
+        st.sidebar.error("`GEMINI_API_KEY` missing in Streamlit secrets. Please configure it for admin access.")
 else:
-    # Allow users to enter their own API key
-    gemini_api_key = st.sidebar.text_input("🔑 Enter your Gemini API Key", type="password")
-    if not gemini_api_key:
-        st.sidebar.warning("Please enter a valid API key to continue.")
-        st.stop()
+    gemini_api_key_candidate = st.sidebar.text_input("🔑 Enter your Gemini API Key", type="password")
+    if not gemini_api_key_candidate:
+        st.sidebar.warning("Please enter a valid API key in the sidebar to process invoices.")
 
-try:
-    # Initialize Gemini client only if an API key is available
-    st.session_state.client = genai.Client(api_key=gemini_api_key)
-    st.sidebar.success("Gemini client initialized successfully.")
-except Exception as e:
-    st.error(f"Failed to initialize Gemini client. Check your API key: {e}")
-    st.session_state.client = None # Reset client on failure
-    st.stop() # Stop the app if client initialization fails
+# Default Gemini model ID input (moved up to be always visible)
+DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
+gemini_model_id_input = st.sidebar.text_input("Gemini Model ID for Extraction:", DEFAULT_GEMINI_MODEL_ID)
+st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model ID is correct and supports schema-based JSON output.")
 
 
 # --- Pydantic Models (as provided - no changes) ---
@@ -150,14 +144,6 @@ def extract_structured_data(
         )
 
         st.write(f"Data extracted for '{display_name}'.")
-        # Access content as text and then parse JSON, as .parsed might not always be directly available depending on genai version
-        # It's safer to get the text response and then parse it with Pydantic's parse_raw or parse_obj
-        response_text = response.text
-        # Assuming Invoice.parse_raw or similar, but the original code used .parsed
-        # If .parsed is reliable, keep it. Otherwise, consider:
-        # return Invoice.model_validate_json(response_text) # For Pydantic v2
-        # return Invoice.parse_raw(response_text) # For Pydantic v1
-        # For simplicity, sticking to .parsed as in your original snippet, assuming it works for your genai setup.
         return response.parsed
 
     except Exception as e:
@@ -217,7 +203,23 @@ if st.session_state["files_uploaded"] or st.session_state.summary_rows:
         if st.button("🚀 Process Invoices", type="primary", help="Click to start extracting data from uploaded invoices."):
             st.session_state["process_triggered"] = True
             st.session_state.summary_rows = [] # Clear previous results on new processing run
-            st.info("Processing initiated. Please wait...")
+
+            # --- API Key Validation and Client Initialization (moved inside button click) ---
+            if not gemini_api_key_candidate:
+                st.error("Please provide a Gemini API Key in the sidebar to process invoices.")
+                st.session_state["process_triggered"] = False # Do not proceed with processing
+                st.stop() # Stop further execution for this run
+            
+            try:
+                # Initialize Gemini client here, as processing is requested
+                st.session_state.client = genai.Client(api_key=gemini_api_key_candidate)
+                st.info("Processing initiated. Please wait...")
+            except Exception as e:
+                st.error(f"Failed to initialize Gemini client with the provided key: {e}")
+                st.session_state.client = None # Reset client on failure
+                st.session_state["process_triggered"] = False # Do not proceed
+                st.stop() # Stop further execution for this run
+
 
     with col_clear:
         if st.button("🗑️ Clear All Files & Reset", help="Click to clear all uploaded files and extracted data."):
@@ -237,13 +239,7 @@ if st.session_state["files_uploaded"] or st.session_state.summary_rows:
             # This rerun will redraw everything, including a *new* file uploader with the incremented key
             st.rerun()
 
-# Default Gemini model ID
-DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
-gemini_model_id_input = st.sidebar.text_input("Gemini Model ID for Extraction:", DEFAULT_GEMINI_MODEL_ID)
-st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model ID is correct and supports schema-based JSON output.")
-
-
-# Only proceed with processing if files are uploaded AND the "Process Invoices" button was clicked
+# Only proceed with processing if files are uploaded AND the "Process Invoices" button was clicked AND client is initialized
 if st.session_state["uploaded_files"] and st.session_state["process_triggered"] and st.session_state.client:
     total_files = len(st.session_state["uploaded_files"])
     progress_text = st.empty()
@@ -362,4 +358,3 @@ elif not st.session_state["files_uploaded"] and not st.session_state["process_tr
     st.info("Upload PDF files and click 'Process Invoices' to see results.")
 elif st.session_state["files_uploaded"] and not st.session_state["process_triggered"]:
     st.info("Files uploaded. Click 'Process Invoices' to start extraction.")
-

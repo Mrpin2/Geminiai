@@ -104,7 +104,7 @@ class Invoice(BaseModel):
     expense_ledger: Optional[str] = None
     tds: Optional[str] = None
 
-# --- Gemini API Interaction Function (minor change to parameter for clarity) ---
+# --- Gemini API Interaction Function (FIXED) ---
 def extract_structured_data(
     client_instance, # The genai.Client object
     gemini_model_id: str,
@@ -137,11 +137,17 @@ def extract_structured_data(
             "If a value is clearly zero, represent it as 0.0 for floats. For dates, prefer DD/MM/YYYY."
         )
         st.write(f"Sending '{display_name}' to Gemini model '{gemini_model_id}' for extraction...")
-        response = client_instance.models.generate_content(
-            model=gemini_model_id,
+
+        # --- FIX APPLIED HERE: Get the model object first ---
+        model = client_instance.get_model(gemini_model_id)
+        response = model.generate_content(
             contents=[prompt, gemini_file_resource],
-            generation_config={'response_mime_type': 'application/json', 'response_schema': pydantic_schema.model_json_schema()} # Use model_json_schema() for Pydantic v2
+            generation_config={
+                'response_mime_type': 'application/json',
+                'response_schema': pydantic_schema.model_json_schema() # This should now work
+            }
         )
+        # --- END FIX ---
 
         st.write(f"Data extracted for '{display_name}'.")
         return response.parsed

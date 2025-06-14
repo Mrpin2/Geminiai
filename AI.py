@@ -167,13 +167,14 @@ gemini_api_key = st.sidebar.text_input(
     type="password",
     value=st.secrets.get("GEMINI_API_KEY", "") # Pre-fill from secrets if available
 )
-st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
+# Removed: st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
 
 # Define the password for processing
 # For security, strongly recommend storing this in a .streamlit/secrets.toml file.
-# Example: RAJEEV_PASSWORD="your_secure_password_here"
-# Then access it like st.secrets.get("RAJEEV_PASSWORD")
+# Example: ACCESS_PASSWORD="your_secure_password_here"
+# If you are testing locally and want "Rajeev" to work without secrets.toml, you can set it directly here:
 ACCESS_PASSWORD = st.secrets.get("ACCESS_PASSWORD", "Rajeev") # Defaulting to "Rajeev" if not in secrets
+
 user_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
 
 

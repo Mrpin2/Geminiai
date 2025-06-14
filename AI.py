@@ -156,7 +156,7 @@ st.markdown("""
       100% { opacity: 1; }
     }
     </style>
-    <h1 class="main-header">📄 Rajeev's AI Invoice Assistant 🚀</h1>
+    <h1 class="main-header">📄 AI Invoice Assistant 🚀</h1>
     """, unsafe_allow_html=True)
 
 st.sidebar.header("⚙️ Configuration")
@@ -169,11 +169,12 @@ gemini_api_key = st.sidebar.text_input(
 )
 st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for production deployments.")
 
-# Rajeev's password for processing (example)
-# FIX 1: Change type="Rajeev" to type="password"
-# FIX 2: Store the actual password securely, ideally in secrets.toml
-RAJEEV_PASSWORD = st.secrets.get("RAJEEV_PASSWORD", "Rajeev") # IMPORTANT: Replace with a strong password!
-rajeev_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
+# Define the password for processing
+# For security, strongly recommend storing this in a .streamlit/secrets.toml file.
+# Example: RAJEEV_PASSWORD="your_secure_password_here"
+# Then access it like st.secrets.get("RAJEEV_PASSWORD")
+ACCESS_PASSWORD = st.secrets.get("ACCESS_PASSWORD", "Rajeev") # Defaulting to "Rajeev" if not in secrets
+user_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
 
 
 DEFAULT_GEMINI_MODEL_ID = "gemini-1.5-flash-latest"
@@ -220,8 +221,7 @@ if clear_button:
 if process_button:
     if not gemini_api_key:
         st.error("❗ Please enter your Gemini API Key in the sidebar.")
-    # FIX 3: Compare against the defined RAJEEV_PASSWORD
-    elif rajeev_entered_password != RAJEEV_PASSWORD:
+    elif user_entered_password != ACCESS_PASSWORD: # Compare against the defined ACCESS_PASSWORD
         st.error("🔒 Incorrect password. Please enter the correct password to proceed.")
     elif not uploaded_files:
         st.error("⬆️ Please upload at least one PDF file to process.")
@@ -374,4 +374,4 @@ elif not uploaded_files and not process_button: # Only show this if nothing has 
     st.info("Upload PDF files and click '🚀 Process Invoices' to see results.")
 
 st.markdown("---")
-st.caption("Developed by Rajeev using Gemini AI and Streamlit.")
+st.caption("Developed using Gemini AI and Streamlit.")

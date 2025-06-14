@@ -172,7 +172,7 @@ st.sidebar.caption("💡 Tip: Store your API key in `secrets.toml` for productio
 # Rajeev's password for processing (example)
 # FIX 1: Change type="Rajeev" to type="password"
 # FIX 2: Store the actual password securely, ideally in secrets.toml
-RAJEEV_PASSWORD = st.secrets.get("RAJEEV_PASSWORD", "your_actual_secure_password_here") # IMPORTANT: Replace with a strong password!
+RAJEEV_PASSWORD = st.secrets.get("RAJEEV_PASSWORD", "Rajeev") # IMPORTANT: Replace with a strong password!
 rajeev_entered_password = st.sidebar.text_input("Enter Password to Process:", type="password")
 
 

@@ -6,6 +6,7 @@ import os
 import tempfile
 import io
 import time # For animations/sleep
+import copy # For deep copying schema
 
 # Try to import google.generativeai, show error if not found
 try:
@@ -41,6 +42,55 @@ class Invoice(BaseModel):
     tds_applicability: Optional[str] = Field(None, description="TDS (Tax Deducted at Source) applicability (e.g., 'Yes - Section 194J', 'No', 'Uncertain').")
     rcm_applicability: Optional[str] = Field(None, description="Reverse Charge Mechanism (RCM) applicability (e.g., 'Yes', 'No', 'Uncertain').")
     currency: str = Field("INR", description="Currency of the invoice amount, defaults to INR.")
+
+# --- Helper Function to convert Pydantic Schema to Gemini API Compatible Schema ---
+def pydantic_schema_to_gemini_schema(pydantic_model_schema: dict) -> dict:
+    """
+    Converts a Pydantic V2 JSON schema (with $defs) into a format
+    compatible with google.generativeai.types.Schema by inlining definitions.
+    This function recursively processes the schema to resolve references.
+    """
+    # Make a deep copy to avoid modifying the original Pydantic schema
+    schema_copy = copy.deepcopy(pydantic_model_schema)
+    
+    # Extract $defs for easy lookup and then remove them from the main schema copy
+    definitions = schema_copy.pop("$defs", {})
+
+    def resolve_refs_recursive(sub_schema: dict) -> dict:
+        """
+        Recursively resolves '$ref' in a sub-schema by inlining definitions.
+        This function handles both direct '$ref' and '$ref' within 'items' for arrays.
+        """
+        if "$ref" in sub_schema:
+            ref_path = sub_schema["$ref"].split("/")
+            if len(ref_path) == 3 and ref_path[1] == "$defs":
+                ref_name = ref_path[2]
+                if ref_name in definitions:
+                    # Recursively resolve the definition itself before returning
+                    return resolve_refs_recursive(definitions[ref_name])
+            return sub_schema # If $ref is not a local $defs or not found, return as is
+
+        if sub_schema.get("type") == "object" and "properties" in sub_schema:
+            # Recursively process properties of an object
+            for prop_name, prop_details in sub_schema["properties"].items():
+                sub_schema["properties"][prop_name] = resolve_refs_recursive(prop_details)
+        
+        if sub_schema.get("type") == "array" and "items" in sub_schema:
+            # Recursively process items of an array
+            sub_schema["items"] = resolve_refs_recursive(sub_schema["items"])
+            
+        return sub_schema
+
+    # Start resolving from the root of the schema (after popping $defs)
+    # Remove top-level metadata fields that `genai.types.Schema` doesn't expect directly
+    # e.g., 'title', '$schema', 'description'
+    filtered_root_schema = {
+        k: v for k, v in schema_copy.items() 
+        if k not in ["title", "$schema", "description"] 
+    }
+    
+    return resolve_refs_recursive(filtered_root_schema)
+
 
 # --- Gemini API Interaction Function ---
 def extract_structured_data(
@@ -98,9 +148,17 @@ def extract_structured_data(
         # Load the model directly
         model = genai.GenerativeModel(gemini_model_id)
 
+        # Generate the Pydantic JSON schema and then convert it
+        raw_pydantic_json_schema = pydantic_schema.model_json_schema()
+        # Convert the Pydantic schema to the Gemini-compatible schema
+        gemini_compatible_schema = pydantic_schema_to_gemini_schema(raw_pydantic_json_schema)
+
         response = model.generate_content(
             contents=[prompt, gemini_file_resource],
-            generation_config={'response_mime_type': 'application/json', 'response_schema': pydantic_schema.model_json_schema()}
+            generation_config={
+                'response_mime_type': 'application/json',
+                'response_schema': gemini_compatible_schema # Use the converted schema here
+            }
         )
         
         if progress_callback:

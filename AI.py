@@ -104,12 +104,46 @@ class Invoice(BaseModel):
     expense_ledger: Optional[str] = None
     tds: Optional[str] = None
 
+# --- Helper function to get the Gemini-compatible schema ---
+def get_invoice_schema_for_gemini():
+    """Returns a dictionary representing the Invoice Pydantic model's schema in a Gemini-compatible format."""
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "invoice_number": {"type": "STRING"},
+            "date": {"type": "STRING"},
+            "gstin": {"type": "STRING"},
+            "seller_name": {"type": "STRING"},
+            "buyer_name": {"type": "STRING"},
+            "buyer_gstin": {"type": "STRING"},
+            "line_items": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "description": {"type": "STRING"},
+                        "quantity": {"type": "NUMBER"},
+                        "gross_worth": {"type": "NUMBER"}
+                    }
+                }
+            },
+            "total_gross_worth": {"type": "NUMBER"},
+            "cgst": {"type": "NUMBER"},
+            "sgst": {"type": "NUMBER"},
+            "igst": {"type": "NUMBER"},
+            "place_of_supply": {"type": "STRING"},
+            "expense_ledger": {"type": "STRING"},
+            "tds": {"type": "STRING"}
+        }
+    }
+
+
 # --- Gemini API Interaction Function (FIXED) ---
 def extract_structured_data(
     client_instance, # The genai.Client object (unused for model interaction now but passed for consistency)
     gemini_model_id: str,
     file_path: str,
-    pydantic_schema: BaseModel,
+    pydantic_schema: BaseModel, # Still passed, but schema used is from get_invoice_schema_for_gemini()
 ):
     display_name = os.path.basename(file_path)
     gemini_file_resource = None # To store the Gemini File API object for deletion
@@ -117,7 +151,6 @@ def extract_structured_data(
     try:
         # 1. Upload the file to the File API
         st.write(f"Uploading '{display_name}' to Gemini File API...")
-        # Note: client_instance.files.upload() should still work as it's a client method.
         gemini_file_resource = client_instance.files.upload(
             file=file_path,
             config={'display_name': display_name.split('.')[0]}
@@ -139,19 +172,17 @@ def extract_structured_data(
         )
         st.write(f"Sending '{display_name}' to Gemini model '{gemini_model_id}' for extraction...")
 
-        # --- FIX APPLIED HERE: Instantiate GenerativeModel directly ---
+        # --- FIX APPLIED HERE: Instantiate GenerativeModel directly and use custom schema ---
         # The genai.GenerativeModel takes the model_id and manages the API call.
         # It needs the API key to be set either via genai.configure() or environment variable.
-        # Since we are using genai.Client already for file uploads, we ensure the API key
-        # is correctly passed to the genai module itself or handled globally.
-        # The previous genai.Client(api_key=...) should handle this implicitly.
-        model = genai.GenerativeModel(gemini_model_id) # Direct instantiation of the model
+        # Since genai.configure() is called when the Process button is clicked, this should work.
+        model = genai.GenerativeModel(gemini_model_id)
 
         response = model.generate_content(
             contents=[prompt, gemini_file_resource],
             generation_config={
                 'response_mime_type': 'application/json',
-                'response_schema': pydantic_schema.model_json_schema() # This should now work
+                'response_schema': get_invoice_schema_for_gemini() # Use the custom, Gemini-compatible schema
             }
         )
         # --- END FIX ---
@@ -224,10 +255,9 @@ if st.session_state["files_uploaded"] or st.session_state.summary_rows:
                 st.stop() # Stop further execution for this run
             
             try:
-                # Initialize Gemini client here, as processing is requested
-                # This should only set the API key for the genai module
+                # Configure the genai module with the API key
                 genai.configure(api_key=gemini_api_key_candidate)
-                # Create a client instance if needed for file operations, etc.
+                # Initialize Gemini client for file operations if needed (e.g., upload/delete)
                 st.session_state.client = genai.Client(api_key=gemini_api_key_candidate)
                 st.info("Processing initiated. Please wait...")
             except Exception as e:

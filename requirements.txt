@@ -1,5 +1,9 @@
-streamlit
 pydantic
-pandas
-openpyxl
 google-generativeai
+streamlit 
+pandas 
+openpyxl 
+pydantic 
+google-generativeai
+google
+google-genai

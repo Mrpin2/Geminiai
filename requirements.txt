@@ -7,3 +7,4 @@ pydantic
 google-generativeai
 google
 google-genai
+streamlit-lottie 

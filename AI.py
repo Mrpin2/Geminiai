@@ -152,11 +152,18 @@ st.markdown("""
     .stProgress > div > div > div > div {
         background-color: #2e86de !important;
     }
-    /* Style for the info box text - now forced to black */
-    .stMarkdown p {
-        color: black !important; /* Force black text for paragraphs in markdown */
-        text-shadow: none; /* Remove shadow if it was causing issues, or adjust */
+    /* Universal text color for better visibility */
+    body {
+        color: black; /* Set a default text color for the body */
     }
+    /* Ensure the instruction box text is black */
+    .stAlert p, .stAlert li, .stAlert b {
+        color: black !important;
+    }
+    .stAlert { /* Adjust info box background to be less transparent if needed */
+        background-color: #e0f2f7; /* A slightly darker blue for better contrast */
+    }
+
     @keyframes fadeIn {
       0% { opacity: 0; }
       100% { opacity: 1; }
@@ -194,17 +201,13 @@ gemini_model_id_input = st.sidebar.text_input(
 )
 st.sidebar.caption(f"Default is `{DEFAULT_GEMINI_MODEL_ID}`. Ensure the model supports schema-based JSON output.")
 
-# Changed instruction text to be explicitly black without shadow (or minimal shadow)
+# Changed instruction text to be explicitly black and using standard markdown within st.info
 st.info(
-    """
-    <p style="color:black;">
-    <b>Instructions:</b><br>
-    1. Enter your <b>Gemini API Key</b> and <b>Password</b> in the sidebar.<br>
-    2. Upload one or more <b>PDF invoice files</b>.<br>
-    3. Click <b>'🚀 Process Invoices'</b> to extract data.<br>
-    The extracted data will be displayed in a table and available for download as Excel.
-    </p>
-    """, unsafe_allow_html=True
+    "**Instructions:**\n"
+    "1. Enter your **Gemini API Key** and **Password** in the sidebar.\n"
+    "2. Upload one or more **PDF invoice files**.\n"
+    "3. Click **'🚀 Process Invoices'** to extract data.\n"
+    "The extracted data will be displayed in a table and available for download as Excel."
 )
 
 
